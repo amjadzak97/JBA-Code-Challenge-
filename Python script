@@ -1,0 +1,132 @@
+from zipfile import ZipFile
+file_name = r"C:\Users\amjad\Downloads\jba-software-code-challenge-data-transformation.zip"
+with ZipFile(file_name, 'r') as zips:
+    read_in = zips.read("cru-ts-2-10.1991-2000-cutdown.pre")
+
+## Make each line a list entry
+
+line_list = [x.decode('utf-8') for x in read_in.splitlines()]
+
+line_list = line_list[5:]
+
+line_list_ref = line_list[:]
+
+## Remove Grid-refs 
+
+n = 11                 
+del line_list[::n]
+
+
+## Make list of just data
+
+sublists = []
+for i in line_list:
+    sublists.append(i.split()) 
+
+
+data_list = []
+for i in sublists:
+    for j in i:
+        data_list.append(int(j))
+
+
+## Identifying misrecorded data 
+
+sorted_data_list = sorted(data_list, reverse = True)
+#print(sorted_data_list)
+
+## Find indexes of mis reports 
+
+indexes = []                  
+for i in data_list:
+	if i > 10000:
+		indexes.append(data_list.index(i))
+
+## Replace values
+
+for i in indexes:
+	data_list[i] = None       
+
+## Add missing values
+
+for i in indexes:              
+	data_list.insert(i+1, None)
+
+
+## Xref and Yref lists ## 
+
+sublists = []
+for i in line_list_ref:
+    sublists.append(i.split()) 
+
+
+block_xref_list = [] 
+for i in sublists:
+	if "Grid-ref=" in i:
+		index = i.index("Grid-ref=") + 1
+		index_val = i[index]
+		block_xref_list.append(index_val)
+
+block_yref_list = []
+for i in sublists:
+	if "Grid-ref=" in i:
+		index = i.index("Grid-ref=") + 2
+		index_val = i[index]
+		block_yref_list.append(index_val)
+
+
+n = 12 * 10
+
+xref_list = sorted(block_xref_list * n)
+
+yref_list = [item for item in block_yref_list for i in range(n)]
+
+
+## Date ## 
+
+sublists = []
+for i in line_list:
+    sublists.append(i.split()) 
+
+## Months
+
+months_range = list(range(1,13))
+months = months_range * len(sublists) 
+
+## Years
+
+years_range = list(range(1991,2001))
+one_block = [item for item in years_range for i in range(12)]
+no_of_blocks = int(len(sublists) / len(years_range))
+years = one_block * no_of_blocks
+
+## Merge months and years 
+
+date = []
+for i in list(zip(months, years)):
+	date.append(("1/" + "%d/" + "%d") % i)
+
+
+## Using sqlite3
+
+
+import sqlite3
+
+con = sqlite3.connect("precipitation.db")
+cur = con.cursor()
+
+cur.execute("CREATE TABLE IF NOT EXISTS rainfall(Xref integer, Yref integer, 'Date' text, Value integer)")
+
+
+def insert(xref, yfref, date, value):
+    cur.execute("INSERT INTO rainfall (Xref, Yref, 'Date', Value ) VALUES (?, ?, ?, ?)", (xref, yfref, date, value))
+
+for xref, yfref, date, value in zip(xref_list, yref_list, data_list, date):
+    insert(xref, yfref, date, value)
+
+
+cur.execute("SELECT * FROM rainfall")
+#print (cur.fetchall())
+
+
+con.commit()
